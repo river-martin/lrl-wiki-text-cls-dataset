@@ -1,5 +1,9 @@
 # LRL Wiki Text Classification Dataset
 
+## Exploratory Data Analysis
+
+See `"scripts/An Exploratory Analysis of Zulu Wikipedia for Multi-label Classification.ipynb"` for an overview of the structured dataset.
+
 ## Installation (Ubuntu)
 
     # Run these commands from the project's root directory to install the project as a python package in a conda environment.
