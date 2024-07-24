@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lrl_wiki_cls"
+version = "0.0.1"
+authors = [
+  { name="River Martin" },
+]
+dependencies=[
+    'pygraphviz',
+    'networkx',
+    'torch',
+    'mwparserfromhell',
+    'numpy',
+    'pandas',
+    'sqlalchemy',
+    'pymysql',
+    'cryptography',
+    'matplotlib',
+    'seaborn',
+    'networkx',
+    'pytest-cov',
+    'tqdm'
+]
+description = "A package that cleans Wikipedia dumps to produce a dataset for text classification."
+readme = "README.md"
+requires-python = ">=3.8"

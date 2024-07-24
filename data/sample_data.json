@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Article title0",
+    "text": "Article text here...",
+    "categories": ["CategoryName1", "CategoryName2"],
+    "page_id": 0
+  },
+  {
+    "title": "Article title1",
+    "text": "Another article text...",
+    "categories": ["CategoryName1", "CategoryName2"],
+    "page_id": 1
+  }
+]
