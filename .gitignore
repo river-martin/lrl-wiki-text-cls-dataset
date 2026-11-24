@@ -1,0 +1,12 @@
+# uv / virtual environments
+.venv/
+__pycache__/
+*.egg-info/
+.conda/
+
+# Build artifacts
+build/
+dist/
+
+# Dataset outputs
+results/

@@ -6,19 +6,28 @@ See `"scripts/An Exploratory Analysis of Zulu Wikipedia for Multi-label Classifi
 
 ## Installation (Ubuntu)
 
-    # Run these commands from the project's root directory to install the project as a python package in a conda environment.
-    # Note that I used Python 3.10.14 and conda 24.3.0
-    conda create -p ./.conda python=3.10
-    conda activate ./.conda
-    # The flag `-e` is used so that the python automatically uses the updated code for the package after edits to the source code. 
-    pip install -e .
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
-In case of errors, I've added the list of packages I have installed along with their versions to `requirements.txt`.
-If necessary, install any necessary packages that are not listed in `pyproject.toml` (and please create an issue with a list of the missing packages, so I can update the `.toml` file).
+    # Run these commands from the project's root directory.
+    uv sync
+
+`uv sync` creates a `.venv`, installs this project in editable mode (so code edits take effect immediately), and installs the exact versions recorded in `uv.lock` (including the `dev` dependency group).
+
+`pygraphviz` needs the system Graphviz libraries before it can be built:
+
+    sudo apt install graphviz graphviz-dev
+
+Run anything inside the environment with `uv run`, e.g. `uv run pytest tests -s`.
+
+To add or change a dependency, use `uv add <package>` (or `uv add --dev <package>` for development tools). This updates both `pyproject.toml` and `uv.lock` together.
 
 ## Using the processed dataset
 
-After installing the project (by following the steps in the previous section), you should be able to run the the notebook in the `scripts/` directory. Note that you will need to make an ipykernel for the virtual environment, i.e. with the appropriate virtual environment activated (e.g. `./.conda`), run: `conda install ipykernel`, and then: `python -m ipykernel install --user --name arbitraryKernelName` (all with the virtual environment activated). You can then select the approriate kernel in JupyterLab or VS code, and run the notebook.
+After installing the project (by following the steps in the previous section), you should be able to run the the notebook in the `scripts/` directory. `ipykernel` is part of the `dev` group, so register a notebook kernel for the uv environment with:
+
+    uv run python -m ipykernel install --user --name lrl-wiki-cls
+
+You can then select the `lrl-wiki-cls` kernel in JupyterLab or VS Code, and run the notebook.
 
 Here are some general instructions for using the dataset:
 
@@ -53,7 +62,7 @@ The instructions in this section are only necessary to recreate the dataset from
     sudo service mysql start
 
     # If you are going to run the project from scratch, decompress the dump files with the command below.
-    python src/decompress_dumps.py
+    uv run python -m lrl_wiki_cls.decompress_dumps
 
 ### Database setup from MySQL dump files
 
@@ -82,13 +91,13 @@ The instructions in this section are only necessary to recreate the dataset from
 ### Producing the structured dataset
 
     # If you only want to generate the final dataset:
-    pytest tests tests/test_wiki_text_cls_dataset.py::TestWikiTextClsDatasetCreator::test_create_dataset_json -s
+    uv run pytest tests tests/test_wiki_text_cls_dataset.py::TestWikiTextClsDatasetCreator::test_create_dataset_json -s
 
 ### Running the tests
 
     # Run the tests (Note that the test for the TextWikiClsDatasetCreator class takes quite a while)
     # The flag `-s` is used so that the progress bars (made with tqdm in the functions being tested) are printed as a test runs.
-    pytest tests -s
+    uv run pytest tests -s
 
 ## Notes
 
