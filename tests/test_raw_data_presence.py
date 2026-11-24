@@ -1,21 +1,33 @@
-import unittest
-import os
+import pytest
 
-class TestFilePresence(unittest.TestCase):
-    data_directory = "data/"  # Assuming a data directory relative to this script's location
+from lrl_wiki_cls.config import (
+    DUMP_DATE,
+    DUMP_FILES,
+    dump_filename,
+    dump_path,
+    dump_url,
+)
 
-    def test_articles_file_presence(self):
-        """Check that the articles file exists"""
-        expected_file = os.path.join(self.data_directory, "zuwiki-latest-pages-articles.xml.bz2")
-        self.assertTrue(os.path.isfile(expected_file), f"{expected_file} does not exist")
 
-    def test_categorylinks_file_presence(self):
-        """Check that the category links file exists"""
-        expected_file = os.path.join(self.data_directory, "zuwiki-latest-categorylinks.sql.gz")
-        self.assertTrue(os.path.isfile(expected_file), f"{expected_file} does not exist")
+def test_dump_names_are_dated_and_consistent():
+    for name in DUMP_FILES:
+        filename = dump_filename(name)
+        assert filename == f"zuwiki-{DUMP_DATE}-{name}"
+        assert dump_url(name).endswith(filename)
+        assert dump_path(name).name == filename
 
-# Add similar tests for any other specific files you expect to process
 
-if __name__ == "__main__":
-    unittest.main()
+def test_required_dumps_are_listed():
+    assert "pages-articles.xml.bz2" in DUMP_FILES
+    assert "categorylinks.sql.gz" in DUMP_FILES
+    assert "linktarget.sql.gz" in DUMP_FILES
+    assert "page.sql.gz" in DUMP_FILES
+    assert "redirect.sql.gz" in DUMP_FILES
 
+
+def test_downloaded_dumps_if_present():
+    missing = [name for name in DUMP_FILES if not dump_path(name).exists()]
+    if missing:
+        pytest.skip(f"raw dumps not downloaded: {missing}")
+    for name in DUMP_FILES:
+        assert dump_path(name).stat().st_size > 0

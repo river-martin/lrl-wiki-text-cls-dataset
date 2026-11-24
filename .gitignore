@@ -7,6 +7,15 @@ __pycache__/
 # Build artifacts
 build/
 dist/
+.cache/
 
 # Dataset outputs
 results/
+
+# Raw Wikimedia dumps and derived caches
+# (sample_data.json is intentionally tracked for tests)
+data/*.sql.gz
+data/*.bz2
+data/*.part
+data/cache/
+data/dump_manifest.json

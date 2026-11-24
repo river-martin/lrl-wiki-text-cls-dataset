@@ -1,8 +1,36 @@
 # LRL Wiki Text Classification Dataset
 
-## Exploratory Data Analysis
+A reproducible pipeline that turns the **Zulu Wikipedia** into a multi-label
+text classification dataset, and publishes it to the Hugging Face Hub.
 
-See `"scripts/An Exploratory Analysis of Zulu Wikipedia for Multi-label Classification.ipynb"` for an overview of the structured dataset.
+Each article becomes one row with:
+
+- the article title and full (wikitext-stripped) text,
+- the article's **direct categories** (as recorded by Wikipedia), and
+- **labels**: those categories plus every ancestor category in the category tree
+  (hierarchical multi-label classification).
+
+The dataset also ships the **category hierarchy** itself, so users can work at
+the leaf, hierarchical, or top-level granularity.
+
+## What the pipeline needs
+
+The build downloads a pinned Wikimedia dump snapshot and needs no database
+server:
+
+| file | why |
+| --- | --- |
+| `pages-articles.xml.bz2` | article text, titles, page/revision ids |
+| `categorylinks.sql.gz` | which categories each page belongs to |
+| `linktarget.sql.gz` | resolves `categorylinks.cl_target_id` to a title |
+| `page.sql.gz` | page namespaces, titles, redirects |
+| `redirect.sql.gz` | category redirect normalisation |
+| `category.sql.gz`, `langlinks.sql.gz` | loaded for completeness/tests |
+
+The dump date is pinned in `src/lrl_wiki_cls/config.py` (`DUMP_DATE`) for
+reproducibility. The previous README referenced April 2024 data, but Wikimedia
+purges old dumps, so the current build pins the latest available snapshot. If
+the pinned date is purged, update `DUMP_DATE` and rebuild (results will differ).
 
 ## Installation (Ubuntu)
 
@@ -10,95 +38,132 @@ This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
 
     # Run these commands from the project's root directory.
     uv sync
-
 `uv sync` creates a `.venv`, installs this project in editable mode (so code edits take effect immediately), and installs the exact versions recorded in `uv.lock` (including the `dev` dependency group).
 
-`pygraphviz` needs the system Graphviz libraries before it can be built:
+No system Graphviz is required: hierarchy plots use a pure-NetworkX layered
+layout.
 
-    sudo apt install graphviz graphviz-dev
+Run anything inside the environment with `uv run`, e.g. `uv run pytest tests`.
 
-Run anything inside the environment with `uv run`, e.g. `uv run pytest tests -s`.
+## Building the dataset
 
-To add or change a dependency, use `uv add <package>` (or `uv add --dev <package>` for development tools). This updates both `pyproject.toml` and `uv.lock` together.
+    # 1. Download the pinned dump files (resumable, size- and CRC-validated).
+    uv run python -m lrl_wiki_cls.download_dumps --verify
 
-## Using the processed dataset
+    # 2. Parse the dumps and write results/zuwiki-dataset.json
+    #    and results/zuwiki-hierarchy.json.
+    uv run python -m lrl_wiki_cls.wiki_text_cls_dataset
 
-After installing the project (by following the steps in the previous section), you should be able to run the the notebook in the `scripts/` directory. `ipykernel` is part of the `dev` group, so register a notebook kernel for the uv environment with:
+    # Optional: drop very short articles (default: keep everything).
+    # Zulu Wikipedia is stub-heavy (median ~8 words), so 0 is the recommended
+    # default; a threshold like 10 removes most of the corpus, not just stubs.
+    uv run python -m lrl_wiki_cls.wiki_text_cls_dataset --min-words 5
 
-    uv run python -m ipykernel install --user --name lrl-wiki-cls
+The SQL dumps are parsed directly into pandas (cached under `data/cache/`); the
+XML dump is streamed from `.bz2` with `iterparse`, so it is never decompressed to
+disk and never fully loaded into memory.
 
-You can then select the `lrl-wiki-cls` kernel in JupyterLab or VS Code, and run the notebook.
+### Optional: model-ready subset
 
-Here are some general instructions for using the dataset:
+The published dataset keeps *all* labels. To reproduce the paper-style setup
+that keeps only labels with at least 16 training examples (20 documents), use
+the provided helper:
 
-    # The code below loads the dataset consisting of the texts and the lists of categories associated with them.
+    from lrl_wiki_cls.wiki_text_cls_dataset import filter_records_by_label_count
+    subset = filter_records_by_label_count(records, min_entries_per_label=20)
+
+## Using the dataset
+
     from lrl_wiki_cls.wiki_text_cls_dataset import WikiTextClsDataset
     from lrl_wiki_cls.config import RESULTS_DIR
-    dataset = WikiTextClsDataset(f"{RESULTS_DIR}/zuwiki-dataset.json")
-    for entry, categories in dataset:
-        print(entry['text'])
-        print(entry['title'])
-        # categories and entry['categories'] should be the same.
-        print(entry['categories'])
-        print(categories)
 
-### Getting the hierarchy graph and metadata
+    dataset = WikiTextClsDataset(f"{RESULTS_DIR}/zuwiki-dataset.json")
+    for entry, labels in dataset:
+        print(entry["title"])
+        print(entry["text"])
+        print(entry["direct_categories"])  # categories on the page
+        print(labels)                      # + all ancestors
+
+### Category hierarchy and metadata
 
     from lrl_wiki_cls.structure_category_metadata import (
         load_dataset_and_cat_metadata,
         get_and_plot_hierarchy_graph,
-        print_dataset_overview
+        print_dataset_overview,
     )
     dataset, cat_metadata = load_dataset_and_cat_metadata()
-    # The text length is the number of characters in the text
     print_dataset_overview(dataset)
     networkx_digraph = get_and_plot_hierarchy_graph(dataset, cat_metadata)
 
-## Execution and testing (for the processing of the raw data)
+## Publishing to Hugging Face
 
-The instructions in this section are only necessary to recreate the dataset from the raw data.
+After building, publish the two dataset configs (`default` and `hierarchy`):
 
-    # Start the database server
-    sudo service mysql start
+    # Preview: builds the DatasetDict objects and writes results/README.md
+    # without uploading (requires the `datasets` dependency from `uv sync`).
+    uv run python -m lrl_wiki_cls.publish_hf_dataset --dry-run
 
-    # If you are going to run the project from scratch, decompress the dump files with the command below.
-    uv run python -m lrl_wiki_cls.decompress_dumps
+    # Authenticate once, then publish. The dataset card is uploaded as the repo's
+    # README.md (merged with the Hub-generated `dataset_info`, so the viewer keeps
+    # discovering the configs).
+    uv run python -c "from huggingface_hub import login; login()"
+    uv run python -m lrl_wiki_cls.publish_hf_dataset --repo-id <user>/<dataset-name>
 
-### Database setup from MySQL dump files
+    # Already pushed the data but the README renders empty? Re-upload just the card:
+    uv run python -m lrl_wiki_cls.publish_hf_dataset --card-only --repo-id <user>/<dataset-name>
 
-    # Create a database and load the mysql dump files
-    mysql -u yourusername -p
+The published schema:
 
-    mysql> create database wiki_categories;
+- **`default`**: `id`, `language`, `page_id`, `revision_id`, `title`, `url`,
+  `text`, `lead`, `num_words`, `direct_categories`, `labels`
+  (`Sequence(ClassLabel)`), split into fixed, seeded, multi-label-stratified
+  `train`/`validation`/`test`.
+- **`hierarchy`**: `category_id`, `title`, `parent_titles`, `depth`,
+  `num_documents`. This is a split-independent lookup table; load it with
+  `split="metadata"` (e.g. `load_dataset(repo, "hierarchy", split="metadata")`).
 
-    mysql> source results/zuwiki-latest-category.sql; 
-    mysql> source results/zuwiki-latest-categorylinks.sql;
-    mysql> source results/zuwiki-latest-langlinks.sql;
-    mysql> source results/zuwiki-latest-page.sql;
+## Running the tests
 
-    # Create a database user with permission to access the local db from Python (the user's password is password)
-    mysql> create user 'pythonuser'@'localhost' identified by 'password';
-    mysql> grant all privileges on wiki_categories.* to 'pythonuser'@'localhost';
-    mysql> flush privileges;
-
-    # Change the type of the cl_type column so that it can be read with pd.read_sql_table()
-    mysql> ALTER TABLE categorylinks ADD COLUMN casted_cl_type char(6);
-    mysql> UPDATE categorylinks SET temp_age = CAST(cl_type as char(6));
-    mysql> ALTER TABLE categorylinks DROP COLUMN cl_type;
-    mysql> ALTER TABLE categorylinks CHANGE COLUMN casted_cl_type cl_type char(6);
-    mysql> exit;
-
-### Producing the structured dataset
-
-    # If you only want to generate the final dataset:
-    uv run pytest tests tests/test_wiki_text_cls_dataset.py::TestWikiTextClsDatasetCreator::test_create_dataset_json -s
-
-### Running the tests
-
-    # Run the tests (Note that the test for the TextWikiClsDatasetCreator class takes quite a while)
-    # The flag `-s` is used so that the progress bars (made with tqdm in the functions being tested) are printed as a test runs.
     uv run pytest tests -s
+
+The test suite runs on small in-repo fixtures and does not need network access, a
+database, or the full dumps.
+
+## Exploratory analysis
+
+The analysis lives in `scripts/eda.py` as a normal Python script in Jupytext
+"percent" format. Run it end-to-end with:
+
+    uv run python scripts/eda.py
+
+It writes figures to `results/figures/` (no GUI needed), which works in a plain
+terminal and in editors without notebook support (e.g. Zed).
+
+If you want a notebook again (JupyterLab or an editor with a kernel), convert it:
+
+    uvx jupytext --to ipynb scripts/eda.py
+
+To make the uv environment available as a Jupyter kernel:
+
+    uv run python -m ipykernel install --user --name lrl-wiki-cls
 
 ## Notes
 
-The Zulu part of the dataset is from the First and the Second of April, 2024
+- The original Zulu data was collected on 1–2 April 2024. Those dumps are no
+  longer served by Wikimedia, so a fresh build uses the currently pinned
+  snapshot (see `config.DUMP_DATE`). Archive `data/` (or the published Parquet
+  files) if you need to freeze a specific snapshot.
+- Labels are derived ("silver") labels from Wikipedia categories and contain
+  noise. Many Zulu Wikipedia articles are very short (the median is well under
+  100 characters), so many documents carry little text signal.
+
+## License
+
+This repository contains two separately licensed works:
+
+- **Source code:** GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+  See [`LICENSE`](LICENSE).
+- **Generated dataset:** Creative Commons Attribution-ShareAlike 4.0
+  International (`CC BY-SA 4.0`), because it is a derivative work of the Zulu
+  Wikipedia. See [`LICENSE-CC-BY-SA-4.0.txt`](LICENSE-CC-BY-SA-4.0.txt) and
+  [`ATTRIBUTION.md`](ATTRIBUTION.md) for the required attribution.

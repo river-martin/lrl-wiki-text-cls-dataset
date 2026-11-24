@@ -1,28 +1,26 @@
-import pandas as pd
+"""Category metadata and hierarchy graph utilities for the dataset.
+
+Everything here is derived from the two JSON artifacts produced by the build step
+(``zuwiki-dataset.json`` and ``zuwiki-hierarchy.json``); no database or dump
+access is required.
+"""
+
 import json
-from lrl_wiki_cls.config import WIKI_CATEGORY_NAMESPACE, RESULTS_DIR
-from lrl_wiki_cls.load_wiki_tables import load_table
-import networkx as nx
-from lrl_wiki_cls.wiki_text_cls_dataset import WikiTextClsDataset
-from lrl_wiki_cls.utils import check_if_is_junk_cat
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import networkx as nx
+import pandas as pd
 
-"""
-This file (`structure_category_metadata.py`) contains the implementation of two classes: `CategoryMetadata` and `HierarchyGraph`. 
+from lrl_wiki_cls.config import RESULTS_DIR
+from lrl_wiki_cls.utils import check_if_is_junk_cat
+from lrl_wiki_cls.wiki_text_cls_dataset import WikiTextClsDataset
 
-The `CategoryMetadata` class is responsible for managing category metadata, such as mapping category titles to IDs and vice versa.
-It provides methods to retrieve category IDs, titles, subcategories, and supercategories.
-
-The `HierarchyGraph` class represents a directed graph that represents the hierarchical classification of categories.
-It takes a dataset and category metadata as input and constructs a graph using the dataset's category information.
-It provides a method to check if the graph has cycles.
-
-The file also includes utility functions for visualizing the hierarchical classification graph and obtaining the initial hierarchy metadata from the dataset.
-
-The `load_dataset_and_cat_metadata` function loads the dataset and category metadata, and the `print_dataset_overview` function prints an overview of the dataset.
-
-Finally, in the `__main__` block, the dataset and category metadata are loaded, the dataset overview is printed, and the hierarchy graph is obtained and plotted.
-"""
+DATASET_JSON = RESULTS_DIR / "zuwiki-dataset.json"
+HIERARCHY_JSON = RESULTS_DIR / "zuwiki-hierarchy.json"
+TITLE_TO_ID_JSON = RESULTS_DIR / "zuwiki-title-to-id.json"
+ID_TO_TITLE_JSON = RESULTS_DIR / "zuwiki-id-to-title.json"
+SUBCAT_LINKS_JSON = RESULTS_DIR / "zuwiki-subcat-links.json"
 
 
 class CategoryMetadata:
@@ -30,24 +28,20 @@ class CategoryMetadata:
         with open(title_to_id_file_path, "r") as file:
             self.title_to_id = json.load(file)
         with open(id_to_title_file_path, "r") as file:
-            self.id_to_title = json.load(file)
+            self.id_to_title = {int(key): value for key, value in json.load(file).items()}
         with open(subcat_links_file_path, "r") as file:
             self.subcat_links = json.load(file)
-        dict_with_int_keys = {}
-        for key, val in self.id_to_title.items():
-            dict_with_int_keys[int(key)] = val
-        self.id_to_title = dict_with_int_keys
 
     def get_id(self, title):
-        assert type(title) == str
+        assert isinstance(title, str)
         val = self.title_to_id.get(title)
-        assert type(val) == int
+        assert isinstance(val, int)
         return val
 
     def get_title(self, id):
-        assert type(id) == int
+        assert isinstance(id, int)
         val = self.id_to_title.get(id)
-        assert type(val) == str
+        assert isinstance(val, str)
         return val
 
     def get_category_ids(self):
@@ -60,68 +54,88 @@ class CategoryMetadata:
         return list(self.title_to_id.keys())
 
     def get_subcats_of(self, cat):
-        subcats = set()
-        for link in self.subcat_links:
-            if link[0] == self.title_to_id[cat]:
-                subcats.add(self.id_to_title[link[1]])
-        return list(subcats)
+        cat_id = self.title_to_id[cat]
+        return list({self.id_to_title[link[1]] for link in self.subcat_links if link[0] == cat_id})
 
     def get_supcats_of(self, cat):
-        supcats = set()
-        for link in self.subcat_links:
-            if link[1] == self.title_to_id[cat]:
-                supcats.add(self.id_to_title[link[0]])
-        return list(supcats)
+        cat_id = self.title_to_id[cat]
+        return list({self.id_to_title[link[0]] for link in self.subcat_links if link[1] == cat_id})
 
 
 class HierarchyGraph:
     def __init__(self, dataset, cat_metadata):
         self.dataset = dataset
         self.cat_metadata = cat_metadata
-
         self.G = nx.DiGraph()
         self.G.add_nodes_from(self.cat_metadata.get_category_ids())
-        self.G.add_edges_from(self.cat_metadata.get_subcat_links())
+        self.G.add_edges_from([tuple(link) for link in self.cat_metadata.get_subcat_links()])
 
     def has_cycle(self):
         try:
-            nx.algorithms.cycles.find_cycle(self.G)
+            nx.find_cycle(self.G)
         except nx.NetworkXNoCycle:
             return False
         return True
 
 
-def visualize_hierarchy(graph, title="Category/subcategory network from Zulu Wikipedia"):
-    """
-    Visualizes the hierarchical classification graph.
+def _hierarchical_layout(graph):
+    """A layered tree layout computed with pure NetworkX (no Graphviz/fontconfig).
 
-    Args:
-        hierarchy (nx.DiGraph): A directed graph representing the hierarchical classification.
+    Each node's layer is its longest distance from a root; nodes in a layer are
+    spread horizontally. Returns a spring layout if the graph is not a DAG.
     """
-    from networkx.drawing.nx_agraph import graphviz_layout
+    if not nx.is_directed_acyclic_graph(graph):
+        return nx.spring_layout(graph, seed=42)
 
-    pos = graphviz_layout(graph, prog="dot")
+    depths = {}
+    for node in nx.topological_sort(graph):
+        predecessors = list(graph.predecessors(node))
+        depths[node] = 0 if not predecessors else 1 + max(depths[p] for p in predecessors)
+
+    layers: dict[int, list] = {}
+    for node, depth in depths.items():
+        layers.setdefault(depth, []).append(node)
+
+    pos = {}
+    for depth, nodes in layers.items():
+        ordered = sorted(nodes, key=str)
+        for index, node in enumerate(ordered):
+            pos[node] = (index - (len(ordered) - 1) / 2, -depth)
+    return pos
+
+
+def visualize_hierarchy(
+    graph,
+    title="Category/subcategory network from Zulu Wikipedia",
+    show=True,
+    save_path=None,
+):
+    plt.figure(figsize=(14, 10))
+    pos = _hierarchical_layout(graph)
     nx.draw(
         graph,
         pos,
         with_labels=False,
-        arrows=True,
         node_size=1,
         font_size=8,
         node_color="blue",
         edge_color="gray",
     )
     plt.title(title)
-    plt.show(block=True)
+    if save_path is not None:
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(save_path, bbox_inches="tight", dpi=150)
+        plt.close()
+    elif show:
+        plt.show(block=True)
 
 
-def get_and_plot_hierarchy_graph(dataset, cat_metadata, root="root"):
+def get_and_plot_hierarchy_graph(dataset, cat_metadata, root="root", show=True, save_path=None):
     hierarchy_graph = HierarchyGraph(dataset, cat_metadata)
     if root == "root":
-        # Add artifical root that points to all the top-level categories
         hierarchy_graph.G.add_node(root)
-        for node in hierarchy_graph.G.nodes:
-            if not list(hierarchy_graph.G.predecessors(node)) and node != root:
+        for node in list(hierarchy_graph.G.nodes):
+            if node != root and not list(hierarchy_graph.G.predecessors(node)):
                 hierarchy_graph.G.add_edge(root, node)
     else:
         root = cat_metadata.get_id(root)
@@ -134,83 +148,57 @@ def get_and_plot_hierarchy_graph(dataset, cat_metadata, root="root"):
         if root == "root"
         else f"Subgraph rooted at {cat_metadata.get_title(root)}"
     )
-    visualize_hierarchy(graph, title=title)
-    plt.show(block=True)
+    visualize_hierarchy(graph, title=title, show=show, save_path=save_path)
     assert not hierarchy_graph.has_cycle()
     return hierarchy_graph
 
 
-def get_initial_hierarchy_metadata_and_save_to_json_files(dataset):
-    set_of_cats_associated_with_articles = set()
-    for entry, list_of_categories in dataset:
-        for cat in list_of_categories:
-            set_of_cats_associated_with_articles.add(cat)
-    # Load the categorylinks and page dataframes
-    categorylinks_df = load_table("categorylinks")
-    page_df = load_table("page")
+def get_initial_hierarchy_metadata_and_save_to_json_files(
+    dataset,
+    hierarchy_edges,
+    title_to_id_path=TITLE_TO_ID_JSON,
+    id_to_title_path=ID_TO_TITLE_JSON,
+    subcat_links_path=SUBCAT_LINKS_JSON,
+):
+    """Assign integer ids to the labels and save the title/id maps and subcat links.
 
-    # Create an empty dictionary to store the category title-id mapping
+    ``hierarchy_edges`` is a list of ``{"parent": ..., "child": ...}`` rows, as
+    written by the build step.
+    """
+    labels = set()
+    for entry, categories in dataset:
+        labels.update(categories)
+
     category_title_id_map = {}
     category_id_title_map = {}
-    category_strings = set()
-    # Links from the parent category to the subcategory
+
+    def ensure_category(title):
+        if title not in category_title_id_map:
+            cat_id = len(category_title_id_map)
+            category_title_id_map[title] = cat_id
+            category_id_title_map[cat_id] = title
+        return category_title_id_map[title]
+
+    for title in sorted(labels):
+        ensure_category(title)
+
     subcat_links = set()
-
-    def make_new_cat(category_strings, cat_title_str, category_title_id_map, category_id_title_map):
-        # We create our own IDs for the categories, we don't use the page_ids, because not all categories have pages/page-ids.
-        cat_id = len(category_strings)
-        category_title_id_map[cat_title_str] = int(cat_id)
-        category_id_title_map[int(cat_id)] = cat_title_str
-        category_strings.add(cat_title_str)
-        return cat_id
-
-    def get_cat_title(page_id):
-        return page_df.query("page_id==@page_id and page_namespace==@WIKI_CATEGORY_NAMESPACE")[
-            "page_title"
-        ]
-
-    for index, row in categorylinks_df.iterrows():
-        cat_title_str = row["cl_to"].decode("utf-8")
-        cat_is_junk = check_if_is_junk_cat(cat_title_str)
-        if cat_is_junk or not cat_title_str in set_of_cats_associated_with_articles:
+    for edge in hierarchy_edges:
+        parent, child = edge["parent"], edge["child"]
+        if parent not in labels or child not in labels:
             continue
-        if not cat_title_str in category_strings:
-            make_new_cat(
-                category_strings, cat_title_str, category_title_id_map, category_id_title_map
-            )
-        if row["cl_type"].decode("utf-8") == "subcat":
-            subcat_page_id = row["cl_from"]
-            subcat_title = get_cat_title(subcat_page_id)
-            if not subcat_title.empty:
-                # Add the subcategory to the mapping
-                subcat_title = subcat_title.values[0]
-                subcat_title_str = subcat_title.decode("utf-8")
-                subcat_is_junk = check_if_is_junk_cat(subcat_title_str)
-                if subcat_is_junk:
-                    continue
-                if not subcat_title_str in category_strings:
-                    make_new_cat(
-                        category_strings,
-                        subcat_title_str,
-                        category_title_id_map,
-                        category_id_title_map,
-                    )
-                # Add the subcategory link to the set
-                link = (
-                    category_title_id_map[cat_title_str],
-                    category_title_id_map[subcat_title_str],
-                )
-                is_self_link = link[0] == link[1]
-                if not is_self_link:
-                    assert category_id_title_map[link[0]] == cat_title_str
-                    assert category_id_title_map[link[1]] == subcat_title_str
-                    subcat_links.add(link)
-    with open(f"{RESULTS_DIR}/zuwiki-title-to-id.json", "w") as file:
-        json.dump(category_title_id_map, file, indent=4)
-    with open(f"{RESULTS_DIR}/zuwiki-id-to-title.json", "w") as file:
-        json.dump(category_id_title_map, file, indent=4)
-    with open(f"{RESULTS_DIR}/zuwiki-subcat-links.json", "w") as file:
-        json.dump(list(subcat_links), file, indent=4)
+        if check_if_is_junk_cat(parent) or check_if_is_junk_cat(child):
+            continue
+        parent_id, child_id = ensure_category(parent), ensure_category(child)
+        if parent_id != child_id:
+            subcat_links.add((parent_id, child_id))
+
+    with open(title_to_id_path, "w") as file:
+        json.dump(category_title_id_map, file, indent=4, ensure_ascii=False)
+    with open(id_to_title_path, "w") as file:
+        json.dump(category_id_title_map, file, indent=4, ensure_ascii=False)
+    with open(subcat_links_path, "w") as file:
+        json.dump(sorted([list(link) for link in subcat_links]), file, indent=4, ensure_ascii=False)
 
 
 def print_dataset_overview(dataset):
@@ -221,40 +209,36 @@ def print_dataset_overview(dataset):
     for entry, categories in dataset:
         doc_stats.append((len(entry["text"]), len(categories)))
         assert len(categories) > 0
-        contains_junk_cat = any(check_if_is_junk_cat(cat) for cat in categories)
-        assert not contains_junk_cat
+        assert not any(check_if_is_junk_cat(cat) for cat in categories)
         assert len(entry["text"]) > 0
         max_num_labels_per_article = max(max_num_labels_per_article, len(categories))
         unique_labels = unique_labels.union(categories)
-    doc_stat_df = pd.DataFrame(doc_stats, columns=["Text Length", "Num. Categories"])
 
-    print(f"Num. documents: {len(dataset.data)}")
+    doc_stat_df = pd.DataFrame(
+        doc_stats, columns=pd.Index(["Text Length", "Num. Categories"])
+    )
+    print(f"Num. documents: {len(dataset)}")
     print(f"Num. unique categories: {len(unique_labels)}")
+    print(f"Max labels on one document: {max_num_labels_per_article}")
     print()
     print(doc_stat_df.describe())
 
 
 def load_dataset_and_cat_metadata():
-    dataset = WikiTextClsDataset(f"{RESULTS_DIR}/zuwiki-dataset.json")
-
-    get_initial_hierarchy_metadata_and_save_to_json_files(dataset)
-
-    # get_initial_hierarchy_metadata creates the following JSON files.
-    title_to_id_file = f"{RESULTS_DIR}/zuwiki-title-to-id.json"
-    category_to_id_file = f"{RESULTS_DIR}/zuwiki-id-to-title.json"
-    subcat_links_file = f"{RESULTS_DIR}/zuwiki-subcat-links.json"
-    cat_metadata = CategoryMetadata(
-        title_to_id_file, category_to_id_file, subcat_links_file_path=subcat_links_file
-    )
+    dataset = WikiTextClsDataset(DATASET_JSON)
+    create_metadata_json_files()
+    cat_metadata = CategoryMetadata(TITLE_TO_ID_JSON, ID_TO_TITLE_JSON, SUBCAT_LINKS_JSON)
     return dataset, cat_metadata
 
 
 def create_metadata_json_files():
-    dataset = WikiTextClsDataset(f"{RESULTS_DIR}/zuwiki-dataset.json")
-    get_initial_hierarchy_metadata_and_save_to_json_files(dataset)
+    dataset = WikiTextClsDataset(DATASET_JSON)
+    with open(HIERARCHY_JSON, "r", encoding="utf-8") as file:
+        hierarchy_edges = json.load(file)
+    get_initial_hierarchy_metadata_and_save_to_json_files(dataset, hierarchy_edges)
 
 
 if __name__ == "__main__":
     dataset, cat_metadata = load_dataset_and_cat_metadata()
     print_dataset_overview(dataset)
-    hierarchy_graph = get_and_plot_hierarchy_graph(dataset, cat_metadata)
+    get_and_plot_hierarchy_graph(dataset, cat_metadata)

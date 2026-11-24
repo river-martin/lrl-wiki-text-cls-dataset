@@ -8,19 +8,18 @@ version = "0.0.1"
 authors = [
   { name = "River Martin" },
 ]
+license = { text = "GPL-3.0-or-later" }
 dependencies = [
-    "pygraphviz",
     "networkx",
-    "torch",
     "mwparserfromhell",
     "numpy",
     "pandas",
-    "sqlalchemy",
-    "pymysql",
-    "cryptography",
     "matplotlib",
     "seaborn",
     "tqdm",
+    "datasets",
+    "huggingface_hub",
+    "pyyaml",
 ]
 description = "A package that cleans Wikipedia dumps to produce a dataset for text classification."
 readme = "README.md"

@@ -1,14 +1,28 @@
 [
   {
+    "id": "zu-0",
+    "language": "zu",
+    "page_id": 0,
+    "revision_id": 100,
     "title": "Article title0",
+    "url": "https://zu.wikipedia.org/?curid=0",
     "text": "Article text here...",
-    "categories": ["CategoryName1", "CategoryName2"],
-    "page_id": 0
+    "lead": "Article text here...",
+    "num_words": 3,
+    "direct_categories": ["CategoryName1"],
+    "labels": ["CategoryName1", "CategoryName2"]
   },
   {
+    "id": "zu-1",
+    "language": "zu",
+    "page_id": 1,
+    "revision_id": 101,
     "title": "Article title1",
+    "url": "https://zu.wikipedia.org/?curid=1",
     "text": "Another article text...",
-    "categories": ["CategoryName1", "CategoryName2"],
-    "page_id": 1
+    "lead": "Another article text...",
+    "num_words": 3,
+    "direct_categories": ["CategoryName1"],
+    "labels": ["CategoryName1", "CategoryName2"]
   }
 ]
