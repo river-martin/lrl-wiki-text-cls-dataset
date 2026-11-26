@@ -23,7 +23,7 @@ dependencies = [
 ]
 description = "A package that cleans Wikipedia dumps to produce a dataset for text classification."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.15"
 
 [dependency-groups]
 dev = [

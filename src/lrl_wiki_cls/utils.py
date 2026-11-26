@@ -27,8 +27,20 @@ def check_if_is_junk_cat(cat_title):
         "Harv",
         "Engvar",
         "Izigaba_ze-Wikipedia",
+        "Invalid_",
+        "Unknown_access_journals",
     ]
-    junk_suffixes = ["_templates", "_template", "_stubs"]
+    junk_suffixes = [
+        "_templates",
+        "_template",
+        "_stubs",
+        "_needing_confirmation",
+        "_different_from_Wikidata",
+        "_using_invalid_parameters",
+        "_invalid_options",
+        "_connected_to_a_Wikidata_item",
+        "_(infobox)",
+    ]
     for prefix in junk_prefixes:
         if cat_title.startswith(prefix):
             return True

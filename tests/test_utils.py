@@ -23,6 +23,13 @@ MAINTENANCE_CATEGORIES = [
     "Harv_and_Sfn_no-target_errors",
     "EngvarB_from_March_2017",
     "Izigaba_ze-Wikipedia_eziqanjwe_ngamazwe",
+    '"Related_ethnic_groups"_needing_confirmation',
+    "Redirects_connected_to_a_Wikidata_item",
+    "IMDb_ID_(Cite_Mojo)_different_from_Wikidata",
+    "CSS_image_crop_using_invalid_parameters",
+    "Invalid_conservation_status",
+    "Unknown_access_journals_(infobox)",
+    "Convert_invalid_options",
 ]
 
 TOPICAL_CATEGORIES = [
@@ -32,6 +39,7 @@ TOPICAL_CATEGORIES = [
     "Amazwe_e-Afrika",
     "Amakhosi_akwaZulu",
     "Wikipedia",  # a topic category on the Zulu wiki's main page
+    "Izigaba_zamabizo",  # "noun classes" is a real topic, unlike Izigaba_ze-Wikipedia
 ]
 
 
